@@ -1,6 +1,6 @@
 # A simple module for visualising, identifing and replace outliers
 import pandas as pd
-import matplotlib.pyplot as plt
+from matplotlib.pyplot import gca
 
 from scipy.stats import norm as Gaussian
 from statsmodels.tsa.api import detrend as sm_detrend
@@ -9,23 +9,29 @@ from statsmodels.sandbox.regression.predstd import wls_prediction_std
 from numpy import issubdtype, number
 
 
-def isoutlier(ts, N = 6, find="IQR", detrend=True, order=1):
-    '''Find outliers in a time series.
-    
-       ts:      A DataFrame or Series with a timeseries index
-                with all numeric columns
+def isoutlier(ts, N=2, find="IQR", detrend=True, order=1):
+    '''
+    Find outliers in a time series.
+    Parameters
+    ----------
+    ts : A DataFrame or Series with a timeseries index
+        with all numeric columns
        
-       find:    {'MAD', 'IQR, 'ZScore'}
-                Method of finding outliers
+    find : {'MAD', 'IQR, 'ZScore'}
+        Method of finding outliers
               
-       N:       if |MAD or ZScore| > sd observation is an outlier
+    N : if |MAD or ZScore| > sd observation is an outlier
        
-       detrend: remove the timeseries trend before finding ourliers
-                see statsmodels.tsa.tsatools.detrend
+    detrend : remove the timeseries trend before finding ourliers
+        see statsmodels.tsa.tsatools.detrend
        
-       order:   polynomial order of the trend, zero is constant, one is linear trend, two is quadratic
+    order : polynomial order of the trend, zero is constant, 
+        one is linear trend, two is quadratic
        
-       returns: Same shape Series or DataFrame of boolean values '''
+    Returns
+    -------
+    Series or DataFrame of boolean valuesSame shape 
+    '''
     
     _checkTimeSeries(ts)  # basic timeseries sanity checks that raise ValueError
   
@@ -52,29 +58,33 @@ def isoutlier(ts, N = 6, find="IQR", detrend=True, order=1):
 
     return outliers
 
-def plotts(ts, trend=True, interval=False, outliers=False,  ax=None,  **kwargs):
-    '''Plot a timeseries optionally overlaying trend, 
-       2 standard deviation interval and outliers
-    
-    ts: A DataFrame or Series with a timeseries index with all numeric columns
-    
+# TODO: Consider non-linear fits
+def plot(ts, trend=True, interval=False, outliers=False,  ax=None,  **kwargs):
+    '''
+    Plot a timeseries with optionl trend, 2 standard deviation interval and outliers
+    Parameters
+    ----------
+    ts : A DataFrame or Series with a timeseries index with all numeric columns
    
-    trend:     overlay trend linear?
+    trend : overlay trend linear?
     
-    interval:  overlay a 2 standard deviation interval?
+    interval : overlay a 2 standard deviation interval?
     
-    outliers:  overlay outliers?
+    outliers : overlay outliers?
     
-    kwargs:    aguments passed to isoutler
+    kwargs : aguments passed to isoutler
     
-    ax:        axes to draw on (optional)
+    ax : axes to draw on (optional)
     
-    returns: axes'''
+    Returns
+    -------
+    axes object
+    '''
     
     _checkTimeSeries(ts)  # basic timeseries sanity checks that raise ValueError
     
     if not ax:
-        ax = plt.subplot(111)
+        ax = gca()
 
     # ols won't accept a date so create time in seconds from first date as the independant variable  
     if isinstance(ts, pd.Series):
@@ -90,20 +100,23 @@ def plotts(ts, trend=True, interval=False, outliers=False,  ax=None,  **kwargs):
         
         if trend:
             label = "{} (r^2 = {:2.2})".format(col, res.rsquared)
-            ax.plot(res.fittedvalues, '--g')
+            res.fittedvalues.plot(ax=ax, style='--g', label="")
         else:
             label = col 
               
         if interval:
             prstd, iv_l, iv_u = wls_prediction_std(res)
             ax.fill_between(iv_l.index, iv_l, iv_u, color='#888888', alpha=0.25) 
-        if outliers: 
-            ax.plot(df[col][isoutlier(df[col], **kwargs)], 'r*', label="outliers")           
-        ax.plot(df[col], label=label)
+        if outliers:
+            df_outliers = df[col][isoutlier(df[col], **kwargs)]
+            if len(df_outliers) > 0:
+                df_outliers.plot( ax=ax, style='r*', label="")           
+      
+        df[col].plot(ax=ax, label=label)
 
     return ax
             
-def replace(ts, find="MAD", detrend=True, order=1, how='NaN', **kwargs):
+def replace(ts, find="IQR", detrend=True, order=1, how='NaN', **kwargs):
         ''' Replace outliers in ts with NaN or interpolated values. 
             method: {}
             . 
@@ -124,7 +137,7 @@ def _checkTimeSeries(ts):
         raise ValueError('Timeseries must be a pandas Series or DataFrame') 
     
     if not _isnumeric(ts):
-        raise ValueError('Timeseries must have all numberic columns')
+        raise ValueError('Timeseries must have all numeric columns')
         
     if not isinstance(ts.index, pd.DatetimeIndex):
         raise ValueError('Timeseries index must be a DatetimeIndex') 
