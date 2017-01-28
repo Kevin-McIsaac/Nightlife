@@ -3,13 +3,12 @@ import pandas as pd
 from matplotlib.pyplot import gca
 
 from scipy.stats import norm as Gaussian
-from statsmodels.tsa.api import detrend as sm_detrend
-from statsmodels.formula.api import ols 
+import statsmodels.formula.api as smf
 from statsmodels.sandbox.regression.predstd import wls_prediction_std
-from numpy import issubdtype, number
+import numpy as np 
 
 
-def isoutlier(ts, N=2, find="IQR", detrend=True, order=1):
+def isoutlier(ts, find="IQR", N=2, detrend=True):
     '''
     Find outliers in a time series.
     Parameters
@@ -20,27 +19,20 @@ def isoutlier(ts, N=2, find="IQR", detrend=True, order=1):
     find : {'MAD', 'IQR, 'ZScore'}
         Method of finding outliers
               
-    N : if |MAD or ZScore| > sd observation is an outlier
+    N : if |MAD or ZScore| > N observation is an outlier
        
     detrend : remove the timeseries trend before finding ourliers
         see statsmodels.tsa.tsatools.detrend
        
-    order : polynomial order of the trend, zero is constant, 
-        one is linear trend, two is quadratic
-       
     Returns
     -------
-    Series or DataFrame of boolean valuesSame shape 
+    Series or DataFrame of boolean values of the same shape 
     '''
     
-    _checkTimeSeries(ts)  # basic timeseries sanity checks that raise ValueError
-  
+    #_checkTimeSeries(ts)  # basic timeseries sanity checks that raise ValueError
+    
     if detrend:
-        if type(ts) == pd.Series: 
-            #Applying detrend to a Series applied it element by element.
-            ts = pd.Series(sm_detrend(ts, order=order), ts.index)
-        else:
-            ts = ts.apply(sm_detrend, order=order)
+        ts = residue(ts) 
             
     if find == "MAD":
         outliers = abs(ts - ts.median()) > ts.mad() * (N / Gaussian.ppf(3/4.)) # usual equation is reordered for efficency
@@ -57,6 +49,35 @@ def isoutlier(ts, N=2, find="IQR", detrend=True, order=1):
         raise ValueError('find must be one of "MAD", "ZScore" or "IQR"') 
 
     return outliers
+
+def trend(ts):
+    '''Return the line of best fit for numeric columns'''
+    
+    df = ts.copy() if not isinstance(ts, pd.Series) else ts.to_frame() # Unify handeling of Series and DataFrame
+    
+    cols =  df.select_dtypes(include=[np.number]).columns
+    df['__Seconds'] = (ts.index - ts.index.min()).astype('timedelta64[s]') 
+
+    for col in cols:
+        if np.issubdtype(df[col], np.number):
+            df[col] = smf.ols(formula=col+ ' ~ __Seconds', data=df).fit().fittedvalues
+    
+    return df[cols] if not isinstance(ts, pd.Series) else df[cols[0]]
+
+def residue(ts):
+    '''Return the residue from the line of best fit for numeric columns'''
+    
+    df = ts.copy() if not isinstance(ts, pd.Series) else ts.to_frame() # Unify handeling of Series and DataFrame
+    
+    cols =  df.select_dtypes(include=[np.number]).columns
+    df['__Seconds'] = (ts.index - ts.index.min()).astype('timedelta64[s]') 
+
+    for col in cols:
+        if np.issubdtype(df[col], np.number):
+            df[col] = smf.ols(formula=col+ ' ~ __Seconds', data=df).fit().resid
+
+    return df[cols]if not isinstance(ts, pd.Series) else df[cols[0]]
+
 
 # TODO: Consider non-linear fits
 def plot(ts, trend=True, interval=False, outliers=False,  ax=None,  **kwargs):
@@ -81,29 +102,28 @@ def plot(ts, trend=True, interval=False, outliers=False,  ax=None,  **kwargs):
     axes object
     '''
     
-    _checkTimeSeries(ts)  # basic timeseries sanity checks that raise ValueError
+    #_checkTimeSeries(ts)  # basic timeseries sanity checks that raise ValueError
     
     if not ax:
         ax = gca()
-
+    
     # ols won't accept a date so create time in seconds from first date as the independant variable  
     if isinstance(ts, pd.Series):
         df = (ts).to_frame() # Unify handeling of Series and DataFrame
     else:
         df = ts.copy()
     
-    cols = df.columns
+    cols =  df.select_dtypes(include=[np.number]).columns
     df['__Seconds'] = (ts.index - ts.index.min()).astype('timedelta64[s]') 
     for col in cols:
-        res = ols(formula=col+ ' ~ __Seconds', data=df).fit()
 
+        res = smf.ols(formula=col+ ' ~ __Seconds', data=df).fit()
+
+        # Plot this first to get the better pandas timeseries drawing of dates on x axis
+        df[col].plot(ax=ax, label="{} (r^2 = {:2.2})".format(col, res.rsquared) if trend else col)              
         
         if trend:
-            label = "{} (r^2 = {:2.2})".format(col, res.rsquared)
             res.fittedvalues.plot(ax=ax, style='--g', label="")
-        else:
-            label = col 
-              
         if interval:
             prstd, iv_l, iv_u = wls_prediction_std(res)
             ax.fill_between(iv_l.index, iv_l, iv_u, color='#888888', alpha=0.25) 
@@ -111,17 +131,31 @@ def plot(ts, trend=True, interval=False, outliers=False,  ax=None,  **kwargs):
             df_outliers = df[col][isoutlier(df[col], **kwargs)]
             if len(df_outliers) > 0:
                 df_outliers.plot( ax=ax, style='r*', label="")           
-      
-        df[col].plot(ax=ax, label=label)
 
     return ax
             
-def replace(ts, find="IQR", detrend=True, order=1, how='NaN', **kwargs):
-        ''' Replace outliers in ts with NaN or interpolated values. 
-            method: {}
-            . 
+def replace(ts, find="IQR", detrend=True, N = 2, how='NaN', **kwargs):
+        ''' 
+        Replace outliers in ts with NaN or interpolated values. 
+        Parameters
+        ----------
+        ts : A DataFrame or Series with a timeseries index
+            with all numeric columns
+
+        find : {'MAD', 'IQR, 'ZScore'}
+            Method of finding outliers
+
+        N : if |MAD or ZScore| > N observation is an outlier
+
+        detrend : remove the timeseries trend before finding ourliers
+            see statsmodels.tsa.tsatools.detrend
+
+        Returns
+        -------
+        Series or DataFrame of the same shape 
+        
         '''
-        ts = ts.where(~isoutlier(ts, find=find, detrend=detrend, order=order))
+        ts = ts.where(~isoutlier(ts, find=find, N=N, detrend=detrend))
         if how != 'NaN':
             ts = ts.interpolate(how=how, **kwargs)
             
@@ -146,5 +180,5 @@ def _checkTimeSeries(ts):
 def _isnumeric(df):
     '''Check that all colums are numeric types'''
    
-    return ((isinstance(df, pd.Series)    and issubdtype(df, number)) or 
-            (isinstance(df, pd.DataFrame) and  all([issubdtype(t, number) for t in df.dtypes])))
+    return ((isinstance(df, pd.Series)    and np.issubdtype(df, np.number)) or 
+            (isinstance(df, pd.DataFrame) and  all([np.issubdtype(t, np.number) for t in df.dtypes])))
