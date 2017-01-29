@@ -28,17 +28,15 @@ def isoutlier(ts, find="IQR", N=2, detrend=True):
     -------
     Series or DataFrame of boolean values of the same shape 
     '''
-    
-    #_checkTimeSeries(ts)  # basic timeseries sanity checks that raise ValueError
-    
+      
     if detrend:
         ts = residue(ts) 
             
     if find == "MAD":
-        outliers = abs(ts - ts.median()) > ts.mad() * (N / Gaussian.ppf(3/4.)) # usual equation is reordered for efficency
+        outliers = abs(ts - ts.median()) > ts.mad() * (N / Gaussian.ppf(3/4.)) # reordered to avoid vector division
         
     elif find == "ZScore":
-        outliers = (ts - ts.mean()) > ts.std() * N # usual equation is reordered for efficency
+        outliers = (ts - ts.mean()) > ts.std() * N # reordered to avoid vector division
         
     elif find == "IQR": # Note uses a fixed value rather than N
         q = ts.quantile([0.25,.75]).T
@@ -55,28 +53,26 @@ def trend(ts):
     
     df = ts.copy() if not isinstance(ts, pd.Series) else ts.to_frame() # Unify handeling of Series and DataFrame
     
-    cols =  df.select_dtypes(include=[np.number]).columns
+    cols =  df.select_dtypes(include=[np.number]).columns # Only work on numeric columns
     df['__Seconds'] = (ts.index - ts.index.min()).astype('timedelta64[s]') 
 
     for col in cols:
-        if np.issubdtype(df[col], np.number):
-            df[col] = smf.ols(formula=col+ ' ~ __Seconds', data=df).fit().fittedvalues
+        df[col] = smf.ols(formula=col+ ' ~ __Seconds', data=df).fit().fittedvalues
     
-    return df[cols] if not isinstance(ts, pd.Series) else df[cols[0]]
+    return df[cols] if not isinstance(ts, pd.Series) else df[cols[0]] # return numeric columns as dataframe or series
 
 def residue(ts):
     '''Return the residue from the line of best fit for numeric columns'''
     
     df = ts.copy() if not isinstance(ts, pd.Series) else ts.to_frame() # Unify handeling of Series and DataFrame
     
-    cols =  df.select_dtypes(include=[np.number]).columns
+    cols =  df.select_dtypes(include=[np.number]).columns # Only work on numeric columns
     df['__Seconds'] = (ts.index - ts.index.min()).astype('timedelta64[s]') 
 
     for col in cols:
-        if np.issubdtype(df[col], np.number):
-            df[col] = smf.ols(formula=col+ ' ~ __Seconds', data=df).fit().resid
+        df[col] = smf.ols(formula=col+ ' ~ __Seconds', data=df).fit().resid
 
-    return df[cols]if not isinstance(ts, pd.Series) else df[cols[0]]
+    return df[cols]if not isinstance(ts, pd.Series) else df[cols[0]] # return numeric columns as dataframe or series
 
 
 # TODO: Consider non-linear fits
@@ -101,8 +97,6 @@ def plot(ts, trend=True, interval=False, outliers=False,  ax=None,  **kwargs):
     -------
     axes object
     '''
-    
-    #_checkTimeSeries(ts)  # basic timeseries sanity checks that raise ValueError
     
     if not ax:
         ax = gca()
@@ -160,25 +154,3 @@ def replace(ts, find="IQR", detrend=True, N = 2, how='NaN', **kwargs):
             ts = ts.interpolate(how=how, **kwargs)
             
         return ts
-
-    
-# ============ utility functions =====================
-
-def _checkTimeSeries(ts):
-    '''basic sanaity checks with clear messages'''
-    
-    if not (isinstance(ts, pd.Series) or isinstance(ts, pd.DataFrame) ):
-        raise ValueError('Timeseries must be a pandas Series or DataFrame') 
-    
-    if not _isnumeric(ts):
-        raise ValueError('Timeseries must have all numeric columns')
-        
-    if not isinstance(ts.index, pd.DatetimeIndex):
-        raise ValueError('Timeseries index must be a DatetimeIndex') 
-    
-# this would be better implemneted as methods on Series and DataFrame
-def _isnumeric(df):
-    '''Check that all colums are numeric types'''
-   
-    return ((isinstance(df, pd.Series)    and np.issubdtype(df, np.number)) or 
-            (isinstance(df, pd.DataFrame) and  all([np.issubdtype(t, np.number) for t in df.dtypes])))
