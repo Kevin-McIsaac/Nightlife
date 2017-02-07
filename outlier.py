@@ -124,7 +124,7 @@ def plot(ts, trend=True, interval=False, outliers=False,  ax=None,  **kwargs):
     result = ols_ts(ts).fit()
 
     # Plot this first to get the better pandas timeseries drawing of dates on x axis
-    ts.plot(ax=ax, label="{} (r^2 = {:2.2})".format(ts.name, result.rsquared) if trend else ts.name)              
+    ts.plot(ax=ax, label="{} ({:.0f}/yr)".format(ts.name, result.params['__X']*60*60*24*365) if trend else ts.name)              
 
     if trend:
         result.fittedvalues.plot(ax=ax, style='--g', label="")
