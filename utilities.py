@@ -23,16 +23,16 @@ def plot_stations_hourly(df, stations, night = "Friday", hours= ["7PM", "8PM", "
     
 def plot_stations_daily(df, stations, find="IQR", title='Daily Exit Traffic'):
     
-    fig, grid = plt.subplots(nrows=2, ncols=len(stations), sharex=False, sharey=True, squeeze=True, figsize=( 8*len(stations), 2.5*2))
-    for night, axes in zip(['Friday', 'Saturday'], grid):
-        for station, ax in zip(stations, axes):
+    nights = ['Friday', 'Saturday']
+    fig, grid = plt.subplots(nrows=len(stations), ncols=len(nights), sharex=False, sharey=True, squeeze=True, figsize=( 8*len(nights), 2.5*len(stations)))
+    for station, axes in zip(stations, grid):
+        for night , ax in zip(nights, axes):
             ts = df.query('Station == @station and Night == @night')
             outlier.plot(ts.Exit, outliers=True, interval=False, find=find, ax=ax).set_ylim((0,None))
             ax.axvline(datetime(day=24, month=2, year=2014), linestyle='dotted', linewidth=2, color="grey")
             ax.set_title(station + " " + night + " night", fontsize=16)
-            #ax.legend(loc="upper left")
 
-    fig.suptitle(title, fontsize= 22, y=1.04)
+    fig.suptitle(title, fontsize= 22, y=1.02)
     fig.tight_layout()
     
 import statsmodels.tsa.api as smt
@@ -40,12 +40,23 @@ import statsmodels.api as sm
 
 def plot_autocorrelation(ts, title="Autocorrelation"):
     
-    ts.plot(ax = plt.subplot2grid((2,3), (0,0), colspan=3)).set_title(title, fontsize=12)
+    fig =  plt.figure(figsize=(16,4))
+    fig.suptitle(title, fontsize=12, y=1.05)
+
+    ts.plot(ax = plt.subplot2grid((2,3), (0,0), colspan=3)).set_title('Time series residues', fontsize=10)
     smt.graphics.plot_acf(ts, ax=plt.subplot2grid((2,3), (1,0)))
     smt.graphics.plot_pacf(ts,  ax=plt.subplot2grid((2,3), (1,1)))
     sm.qqplot(ts,  line='s',  ax= plt.subplot2grid((2,3), (1,2)))
 
-    plt.tight_layout()
+    fig.tight_layout()
+
+def plot_ac(df, station, night, hour, col='Exit'):
+    
+    ts = (df.query('Station == @station and Night == @night and Hour == @hour').
+          groupby(level='Date')['Exit', 'Entry'].sum())
+
+   
+    plot_autocorrelation(outlier.residue(ts[col]), "{:} {:} Night {:} {:} Traffic".format(station, night, hour,  col))
     
 def set_titles(g):
     '''Set titles correctly to row and col names'''
